@@ -6,7 +6,7 @@
 
 - Ubuntu OS
 
-- Makefile installed
+- Make
 
 ### 
 
