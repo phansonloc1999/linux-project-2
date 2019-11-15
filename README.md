@@ -8,7 +8,7 @@
 
 - Make
 
-### 
+### Installing
 
 Run the following commands:
 
