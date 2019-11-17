@@ -72,16 +72,6 @@ static void get_syscall_table(void)
 	syscall_table = NULL;
 }
 
-static void enable_write(void)
-{
-	write_cr0(read_cr0() & ~0x10000);
-}
-
-static void disable_write(void)
-{
-	write_cr0(read_cr0() | 0x10000);
-}
-
 /* Make page writeable */
 int make_rw(unsigned long address)
 {
