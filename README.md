@@ -38,6 +38,7 @@ to remove module from kernel
 # 2. System Call Hooking
 - open system call: include process name and name of opened file in dmesg
 - write system call: include process name and name of written file in dmesg
+
 Change directory to hook and compile:
 ```
 cd hook
