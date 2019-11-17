@@ -15,7 +15,6 @@
 #include <linux/unistd.h>
 #include <linux/slab.h>
 
-// Environment: Virtual Box with Ubuntu 18.04 (64 bit), kernel version 5.0.0-25-generic.
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Nguyen Phuong Vy");
 MODULE_DESCRIPTION("Hook open and write syscall");
@@ -24,7 +23,7 @@ MODULE_DESCRIPTION("Hook open and write syscall");
 unsigned long **syscall_table;
 
 asmlinkage int(*old_open)(const char __user *, int, mode_t);
-asmlinkage ssize_t(*old_write)(unsigned int, const void __user *, size_t);
+asmlinkage int(*old_write)(unsigned int, const char __user *, size_t);
 
 asmlinkage int new_open(const char __user *pathname, int flags, mode_t mode)
 {
@@ -33,26 +32,58 @@ asmlinkage int new_open(const char __user *pathname, int flags, mode_t mode)
 	copy_from_user(name, pathname, 1024);
 
 	printk(KERN_INFO "Process %s is opening file: %s\n", current->comm, name);
-	
+
 	kfree(name);
 	return (*old_open)(pathname, flags, mode);
 }
 
-asmlinkage ssize_t new_write(unsigned int fd, const void __user *buf, size_t count)
+asmlinkage int new_write(unsigned int fd, const char __user *buf, size_t count)
 {
-	/* Retrieve pathname from file descriptor using file descriptor table
-	Reference: https://code.woboq.org/linux/linux/include/linux/fdtable.h.html#fdtable */
+	int bytes_write;
+
+	printk(KERN_INFO "HOOK write syscall\n");
+
+	bytes_write = (*old_write)(fd, buf, count);
 
 	char *buffer = kmalloc(1024, GFP_KERNEL);
 	char *kfname = d_path(&fcheck_files(current->files, fd)->f_path, buffer, 1024);
-	printk(KERN_INFO "Process %s writes %zu bytes to %s", current->comm, count, kfname);
+	printk(KERN_INFO "Process %s writes %d bytes to %s", current->comm, bytes_write, kfname);
 	kfree(buffer);
-	return(*old_write)(fd, buf, count);;
 
+	return bytes_write;
+}
+
+static void get_syscall_table(void)
+{
+	unsigned long int offset = PAGE_OFFSET;
+
+	while (offset < ULLONG_MAX)
+	{
+		unsigned long **temp_syscall_table = (unsigned long **)offset;
+		// found system syscall table
+		if (temp_syscall_table[__NR_close] ==(unsigned long *)ksys_close) 
+		{
+			syscall_table = temp_syscall_table;
+			return;
+		}
+
+		offset += sizeof(void *);
+	}
+	syscall_table = NULL;
+}
+
+static void enable_write(void)
+{
+	write_cr0(read_cr0() & ~0x10000);
+}
+
+static void disable_write(void)
+{
+	write_cr0(read_cr0() | 0x10000);
 }
 
 /* Make page writeable */
-int make_rw(unsigned long address) 
+int make_rw(unsigned long address)
 {
 	unsigned int level;
 	pte_t *pte = lookup_address(address, &level);
@@ -65,48 +96,27 @@ int make_rw(unsigned long address)
 
 /* Make page write protected */
 int make_ro(unsigned long address)
- {
+{
 	unsigned int level;
 	pte_t *pte = lookup_address(address, &level);
 	pte->pte = pte->pte &~_PAGE_RW;
 	return 0;
 }
 
-static void get_syscall_table(void)
-{
-	unsigned long int offset = PAGE_OFFSET;
-
-	while (offset < ULLONG_MAX)
-	{
-		unsigned long **temp_syscall_table = (unsigned long **)offset;
-		// found system syscall table
-		if (temp_syscall_table[__NR_close] == (unsigned long *)ksys_close)
-		{
-			syscall_table = temp_syscall_table;
-			return;
-		}
-
-		offset += sizeof(void *);
-	}
-	syscall_table = NULL;
-}
-
 static int init_hook(void)
 {
-	printk(KERN_INFO "Loaded hook successfully...\n")
+	printk(KERN_INFO "Loaded hook successfully...\n");
 
-	get_syscall_table();
-	if (syscall_table == NULL) 
+		get_syscall_table();
+	if (syscall_table == NULL)
 	{
 		printk(KERN_ERR "HOOK not found syscall table\n");
 		return -1;
 	}
 
 	// backup syscall
-	/*old_open = (void *)syscall_table[__NR_open];
-	old_write = (void *)syscall_table[__NR_write];*/
-	old_open = syscall_table[__NR_open];
-	old_write = syscall_table[__NR_write];
+	old_open = (void *)syscall_table[__NR_open];
+	old_write = (void *)syscall_table[__NR_write];
 
 	/* Disable page protection */
 	make_rw((unsigned long)syscall_table);
@@ -125,7 +135,7 @@ static void exit_hook(void)
 	printk(KERN_INFO "HOOK module exit\n");
 
 	// tim duoc syscall table
-	if (syscall_table != NULL)
+	if (syscall_table != NULL) 
 	{
 		/* Disable page protection */
 		make_rw((unsigned long)syscall_table);
