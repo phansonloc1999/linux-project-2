@@ -45,11 +45,11 @@ cd hook
 make
 ```
 Open a new terminal for observing kernel messages:
+Note: Login as root to perform following operations.
 ```
 dmesg -C
 dmesg -wH
 ```
-Note: Login as root to perform following operations.
 
 Load new module hook.ko:
 ```
